@@ -132,6 +132,15 @@
         </div>
       </div>
 
+      <label for="fMode">Modo da conversa</label>
+      <select id="fMode">
+        <option value="livre">Conversa livre (qualquer assunto)</option>
+        <option value="desabafo">Desabafo (ouvinte acolhedora, estilo terapeuta)</option>
+        <option value="encontro">Encontro (flerte e romance)</option>
+        <option value="professora">Professora (aprender um assunto)</option>
+      </select>
+      <div class="hint">Dá para trocar durante a conversa, falando: "quero desabafar", "me ensina Docker", "vamos flertar".</div>
+
       <label for="fVision">O que ela vê pela câmera</label>
       <select id="fVision">
         <option value="eco">Econômico: foto a cada ~8 s, e a cada 1,5 s quando você fala</option>
@@ -142,7 +151,7 @@
 
       <label class="check"><input type="checkbox" id="fFone" /> Estou de fone de ouvido (permite interromper a Luna falando por cima)</label>
       <label class="check"><input type="checkbox" id="fPip" checked /> Mostrar minha câmera no cantinho</label>
-      <label class="check"><input type="checkbox" id="fDate" /> Modo encontro (flerte e romance)</label>
+
 
       <div class="progress"><div id="bar"></div></div>
       <div id="setupStatus">Carregando a Luna…</div>
@@ -152,6 +161,8 @@
         <summary>Dicas</summary>
         Sem fone, a Luna para de ouvir enquanto fala (para não ouvir a própria voz). Para interromper, <b>toque nela</b>.<br />
         Mostre algo para a câmera e pergunte: "o que você acha disso?".<br />
+        No computador, o botão <b>Tela</b> compartilha sua tela com ela (ótimo no modo Professora: ela lê o seu terminal).<br />
+        Ela pesquisa na internet sozinha quando precisa (notícias, versões, preços).<br />
         Peça coisas para ela: "pisca pra mim", "manda um beijo", "muda o fundo pra azul", "tira os óculos", "deixa o cabelo loiro", "chega mais perto".<br />
         A linha pequena no canto mostra o consumo da sessão (tokens), útil para acompanhar o plano grátis.
       </details>
@@ -171,6 +182,7 @@
       <button id="bMic" class="on">Microfone</button>
       <button id="bCam" class="on">Câmera</button>
       <label class="colorbtn">Fundo<input id="bBg" type="color" value="#000000" /></label>
+      <button id="bScreen" style="display:none">Tela</button>
       <button id="bSubs" class="on">Legendas</button>
       <button id="bEnd">Encerrar</button>
     </div>

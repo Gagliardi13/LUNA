@@ -100,3 +100,39 @@ export class Vision extends EventTarget {
     this.video.srcObject = null;
   }
 }
+
+// Compartilhar a tela do computador (para ela ler o terminal, um código, um documento)
+export class ScreenShare {
+  constructor() {
+    this.video = document.createElement('video');
+    this.video.muted = true;
+    this.video.playsInline = true;
+    this.canvas = document.createElement('canvas');
+    this.active = false;
+    this.onend = null;
+  }
+  static supported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  }
+  async start() {
+    this.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    this.video.srcObject = this.stream;
+    await this.video.play();
+    this.active = true;
+    this.stream.getVideoTracks()[0].addEventListener('ended', () => { this.active = false; this.onend?.(); });
+  }
+  snapshot(maxW = 1280, quality = 0.7) {
+    const v = this.video;
+    if (!this.active || v.readyState < 2 || !v.videoWidth) return null;
+    const w = Math.min(maxW, v.videoWidth);
+    const h = Math.round((v.videoHeight / v.videoWidth) * w);
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.canvas.getContext('2d').drawImage(v, 0, 0, w, h);
+    return this.canvas.toDataURL('image/jpeg', quality).split(',')[1];
+  }
+  stop() {
+    this.active = false;
+    try { this.stream?.getTracks().forEach((t) => t.stop()); } catch {}
+  }
+}

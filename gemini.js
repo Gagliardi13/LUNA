@@ -18,7 +18,7 @@ function fromBase64(b64) {
 }
 
 export class GeminiLive extends EventTarget {
-  constructor({ workerUrl, appToken, voice, systemPrompt, tools = null, model = GEMINI_MODEL }) {
+  constructor({ workerUrl, appToken, voice, systemPrompt, tools = null, search = true, mediaResolution = 'MEDIA_RESOLUTION_LOW', model = GEMINI_MODEL }) {
     super();
     this.workerUrl = workerUrl.replace(/\/+$/, '');
     this.appToken = appToken;
@@ -26,6 +26,8 @@ export class GeminiLive extends EventTarget {
     this.systemPrompt = systemPrompt;
     this.model = model;
     this.tools = tools;
+    this.search = search;
+    this.mediaResolution = mediaResolution;
     this.handle = null; // para retomar a sessão
     this.closing = false;
     this.ready = false;
@@ -69,7 +71,7 @@ export class GeminiLive extends EventTarget {
           generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
-            mediaResolution: 'MEDIA_RESOLUTION_LOW', // imagens da câmera em baixa resolução: bem mais barato
+            mediaResolution: this.mediaResolution, // baixa = bem mais barato; média = consegue ler texto da tela
           },
           systemInstruction: { parts: [{ text: this.systemPrompt }] },
           inputAudioTranscription: {},
@@ -77,7 +79,10 @@ export class GeminiLive extends EventTarget {
           contextWindowCompression: { slidingWindow: {} }, // conversa sem limite de tempo
           sessionResumption: this.handle ? { handle: this.handle } : {},
         };
-        if (this.tools) setup.tools = [{ functionDeclarations: this.tools }];
+        setup.tools = [];
+        if (this.tools) setup.tools.push({ functionDeclarations: this.tools });
+        if (this.search) setup.tools.push({ googleSearch: {} }); // pesquisa no Google durante a conversa
+        if (!setup.tools.length) delete setup.tools;
         ws.send(JSON.stringify({ setup }));
       };
       ws.onmessage = async (ev) => {
@@ -180,6 +185,11 @@ export class GeminiLive extends EventTarget {
   }
   sendText(text) {
     this._send({ realtimeInput: { text } });
+  }
+  // reconecta mantendo a conversa (ex.: para mudar a resolução das imagens ao compartilhar a tela)
+  reconfigure(changes) {
+    Object.assign(this, changes);
+    try { this.ws && this.ws.close(4001, 'reconfigurar'); } catch {}
   }
   close() {
     this.closing = true;

@@ -4,9 +4,9 @@ import { TalkingHead } from './lib/talkinghead/talkinghead.mjs';
 import { applyLook } from './look.js';
 import { AudioLipsync } from './lipsync.js';
 import { GeminiLive } from './gemini.js';
-import { Vision } from './vision.js';
+import { Vision, ScreenShare } from './vision.js';
 import { EmotionEngine } from './emotion.js';
-import { PERSONA, MODO_ENCONTRO, SAUDACAO, preencher } from './persona.js';
+import { PERSONA, MODOS, SAUDACAO, preencher } from './persona.js';
 import { TOOLS, runCommand } from './commands.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,7 +24,7 @@ $('fBg').value = store.get('bg', '#000000');
 $('fVision').value = store.get('vision', 'eco');
 $('fFone').checked = store.get('fone', '0') === '1';
 $('fPip').checked = store.get('pip', '1') === '1';
-$('fDate').checked = store.get('date', '0') === '1';
+$('fMode').value = store.get('mode', store.get('date', '0') === '1' ? 'encontro' : 'livre');
 setBackground($('fBg').value);
 
 function setBackground(c) {
@@ -92,6 +92,7 @@ let lunaSpeaking = false, userSpeaking = false, discarding = false;
 let newTurn = true;
 let lunaLine = '', userLine = '', sentence = '';
 let lastFrame = 0, sessionStart = 0;
+let mode = 'livre', screen = null;
 
 // ---------- começar ----------
 $('btnStart').onclick = async () => {
@@ -101,7 +102,8 @@ $('btnStart').onclick = async () => {
   if (!worker || !token) return setStatus('Preencha o endereço do servidor e a senha.', true);
   fone = $('fFone').checked;
   visionMode = $('fVision').value;
-  for (const [k, v] of [['worker', worker], ['token', token], ['name', name], ['voice', $('fVoice').value], ['bg', $('fBg').value], ['vision', visionMode], ['fone', fone ? '1' : '0'], ['pip', $('fPip').checked ? '1' : '0'], ['date', $('fDate').checked ? '1' : '0']]) store.set(k, v);
+  for (const [k, v] of [['worker', worker], ['token', token], ['name', name], ['voice', $('fVoice').value], ['bg', $('fBg').value], ['vision', visionMode], ['fone', fone ? '1' : '0'], ['pip', $('fPip').checked ? '1' : '0'], ['mode', $('fMode').value]]) store.set(k, v);
+  mode = $('fMode').value;
 
   $('btnStart').disabled = true;
   try {
@@ -161,8 +163,10 @@ $('btnStart').onclick = async () => {
       workerUrl: worker,
       appToken: token,
       voice: $('fVoice').value,
-      systemPrompt: preencher($('fDate').checked ? PERSONA + '\n\n' + MODO_ENCONTRO : PERSONA, name),
+      systemPrompt: preencher(PERSONA + '\n\n' + MODOS[mode].texto, name),
       tools: TOOLS,
+      search: true,
+      mediaResolution: mode === 'professora' ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_LOW',
     });
     wireGemini(gemini);
     await gemini.connect();
@@ -227,7 +231,7 @@ function wireGemini(g) {
   g.addEventListener('usage', (e) => updateMeter(e.detail));
   // comandos: "pisca pra mim", "muda o fundo", "tira os óculos"...
   g.addEventListener('tool-call', (e) => {
-    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor };
+    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor, onMode: (m) => { mode = m; toast('Modo: ' + MODOS[m].nome, 2500); } };
     const responses = e.detail.map((fc) => ({
       id: fc.id,
       name: fc.name,
@@ -355,10 +359,12 @@ function onFace(f) {
 
 // ---------- imagens para o Gemini ----------
 function sendFrame(force = false) {
-  if (!vision || !camOn || !gemini?.ready || visionMode === 'off') return;
+  if (!gemini?.ready) return;
   const now = performance.now();
   if (!force && now - lastFrame < 500) return;
-  const img = vision.snapshot(512, 0.6);
+  let img = null;
+  if (screen?.active) img = screen.snapshot(1280, 0.7); // compartilhando a tela: ela vê a tela
+  else if (vision && camOn && visionMode !== 'off') img = vision.snapshot(512, 0.6);
   if (!img) return;
   gemini.sendImage(img);
   lastFrame = now;
@@ -366,6 +372,7 @@ function sendFrame(force = false) {
 setInterval(() => {
   if (!sessionStart) return;
   const since = performance.now() - lastFrame;
+  if (screen?.active) { if (userSpeaking ? since >= 2000 : since >= 6000) sendFrame(); return; }
   if (visionMode === 'full' && since >= 1000) sendFrame();
   else if (visionMode === 'eco' && (userSpeaking ? since >= 1500 : since >= 8000)) sendFrame();
 }, 250);
@@ -411,6 +418,31 @@ $('bCam').onclick = async () => {
   $('bCam').classList.toggle('on', camOn);
   $('bCam').classList.toggle('off', !camOn);
 };
+if (ScreenShare.supported() && !/iPhone|iPad|Android/i.test(navigator.userAgent)) $('bScreen').style.display = '';
+$('bScreen').onclick = async () => {
+  if (screen?.active) { screen.stop(); screenOff(); return; }
+  try {
+    screen = new ScreenShare();
+    screen.onend = screenOff;
+    await screen.start();
+    $('bScreen').classList.add('on');
+    // para ler texto na tela, as imagens precisam de resolução maior (reconecta sem perder a conversa)
+    if (gemini && gemini.mediaResolution !== 'MEDIA_RESOLUTION_MEDIUM') gemini.reconfigure({ mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' });
+    setTimeout(() => {
+      sendFrame(true);
+      gemini?.sendText('(Ele começou a compartilhar a tela do computador com você. As próximas imagens são da tela dele, não da câmera. Comente brevemente o que vê, se fizer sentido.)');
+    }, 1500);
+  } catch (e) {
+    screen = null;
+    if (e.name !== 'NotAllowedError') toast('Não consegui compartilhar a tela: ' + e.message);
+  }
+};
+function screenOff() {
+  $('bScreen').classList.remove('on');
+  screen = null;
+  gemini?.sendText('(Ele parou de compartilhar a tela. As imagens voltam a ser da câmera.)');
+}
+
 $('bBg').oninput = (e) => { setBackground(e.target.value); store.set('bg', e.target.value); };
 $('fBg').oninput = (e) => setBackground(e.target.value);
 $('bSubs').onclick = () => { subsOn = !subsOn; $('bSubs').classList.toggle('on', subsOn); showSubs(); };
@@ -425,7 +457,8 @@ $('bEnd').onclick = () => {
 function cleanup() {
   try { gemini?.close(); } catch {}
   try { head.stopListening(); head.streamStop(); } catch {}
-  try { vision?.stop(); } catch {}
+  try { vision?.stop(); screen?.stop(); } catch {}
+  screen = null; $('bScreen').classList.remove('on');
   try { micStream?.getTracks().forEach((t) => t.stop()); micCtx?.close(); } catch {}
   gemini = null; vision = null; micStream = null; micCtx = null;
   sessionStart = 0; lunaSpeaking = false; userSpeaking = false; discarding = false; newTurn = true;

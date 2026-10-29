@@ -25,6 +25,13 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 2. **GitHub Pages**: Settings → Pages → `main` / `(root)`.
 3. Abra o site, preencha endereço do Worker, senha e seu nome → **Começar conversa**.
 
+## Recursos
+
+- **Modos de conversa:** livre, desabafo (ouvinte estilo terapeuta), encontro (flerte e romance) e professora (aprender um assunto). Escolha na tela inicial ou peça por voz.
+- **Busca no Google** durante a conversa (notícias, versões, preços).
+- **Compartilhar a tela** (computador): ela vê seu terminal/código e ajuda.
+- **Comandos por voz:** expressões, gestos, fundo, cabelo, óculos, câmera, humor.
+
 ## Uso e custos
 
 - Plano grátis do Gemini: limitado por consumo diário; a linha no canto mostra os tokens da sessão.
@@ -34,7 +41,7 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 
 ## Personalizar
 
-- Personalidade e modo encontro: `persona.js`
+- Personalidade e modos (livre, desabafo, encontro, professora): `persona.js`
 - Cor do cabelo, luzes e enquadramento: `LOOK` em `look.js`
 - Óculos: `glasses.js`
 

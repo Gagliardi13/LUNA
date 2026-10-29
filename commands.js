@@ -1,6 +1,7 @@
 // Comandos que a Luna pode executar sozinha ou quando você pede por voz
 // ("Luna, pisca pra mim", "muda o fundo pra azul", "tira os óculos").
 import { setHair, setZoom } from './look.js';
+import { MODOS } from './persona.js';
 
 const CORES = {
   preto: '#000000', branco: '#f2f2f2', cinza: '#3a3a40', azul: '#1d2b4a', 'azul claro': '#5b86c5', marinho: '#0f1a33',
@@ -48,6 +49,11 @@ export const TOOLS = [
     name: 'enquadramento',
     description: 'Aproxima ou afasta a câmera que mostra a Luna.',
     parameters: { type: 'OBJECT', properties: { distancia: { type: 'STRING', enum: ['bem_perto', 'perto', 'normal', 'longe'] } }, required: ['distancia'] },
+  },
+  {
+    name: 'mudar_modo',
+    description: 'Muda o modo da conversa quando ele pedir: livre (conversa normal), desabafo (ouvinte acolhedora, estilo terapeuta), encontro (flerte e romance) ou professora (ensinar um assunto). Siga as instruções devolvidas.',
+    parameters: { type: 'OBJECT', properties: { modo: { type: 'STRING', enum: Object.keys(MODOS) } }, required: ['modo'] },
   },
   {
     name: 'humor',
@@ -99,6 +105,12 @@ export function runCommand(name, args, ctx) {
       case 'enquadramento': {
         setZoom(head, { bem_perto: -0.9, perto: -0.5, normal: 0, longe: 0.9 }[args.distancia] ?? 0);
         return 'feito';
+      }
+      case 'mudar_modo': {
+        const m = MODOS[args.modo];
+        if (!m) return 'modo desconhecido';
+        ctx.onMode?.(args.modo);
+        return `Modo alterado para "${m.nome}". A partir de agora siga isto (substitui o modo anterior): ${m.texto}`;
       }
       case 'humor': {
         setMoodFor(HUMORES[args.estado] || 'neutral', 15000);
