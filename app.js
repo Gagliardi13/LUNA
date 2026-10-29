@@ -6,7 +6,8 @@ import { AudioLipsync } from './lipsync.js';
 import { GeminiLive } from './gemini.js';
 import { Vision } from './vision.js';
 import { EmotionEngine } from './emotion.js';
-import { PERSONA, SAUDACAO, preencher } from './persona.js';
+import { PERSONA, MODO_ENCONTRO, SAUDACAO, preencher } from './persona.js';
+import { TOOLS, runCommand } from './commands.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,6 +24,7 @@ $('fBg').value = store.get('bg', '#000000');
 $('fVision').value = store.get('vision', 'eco');
 $('fFone').checked = store.get('fone', '0') === '1';
 $('fPip').checked = store.get('pip', '1') === '1';
+$('fDate').checked = store.get('date', '0') === '1';
 setBackground($('fBg').value);
 
 function setBackground(c) {
@@ -99,7 +101,7 @@ $('btnStart').onclick = async () => {
   if (!worker || !token) return setStatus('Preencha o endereço do servidor e a senha.', true);
   fone = $('fFone').checked;
   visionMode = $('fVision').value;
-  for (const [k, v] of [['worker', worker], ['token', token], ['name', name], ['voice', $('fVoice').value], ['bg', $('fBg').value], ['vision', visionMode], ['fone', fone ? '1' : '0'], ['pip', $('fPip').checked ? '1' : '0']]) store.set(k, v);
+  for (const [k, v] of [['worker', worker], ['token', token], ['name', name], ['voice', $('fVoice').value], ['bg', $('fBg').value], ['vision', visionMode], ['fone', fone ? '1' : '0'], ['pip', $('fPip').checked ? '1' : '0'], ['date', $('fDate').checked ? '1' : '0']]) store.set(k, v);
 
   $('btnStart').disabled = true;
   try {
@@ -159,7 +161,8 @@ $('btnStart').onclick = async () => {
       workerUrl: worker,
       appToken: token,
       voice: $('fVoice').value,
-      systemPrompt: preencher(PERSONA, name),
+      systemPrompt: preencher($('fDate').checked ? PERSONA + '\n\n' + MODO_ENCONTRO : PERSONA, name),
+      tools: TOOLS,
     });
     wireGemini(gemini);
     await gemini.connect();
@@ -222,6 +225,16 @@ function wireGemini(g) {
   g.addEventListener('closed', (e) => { setState('off', 'Desconectada'); toast('A conexão com a Luna caiu (' + (e.detail.reason || e.detail.code) + '). Toque em Encerrar e comece de novo.'); });
   g.addEventListener('error', (e) => toast(String(e.detail)));
   g.addEventListener('usage', (e) => updateMeter(e.detail));
+  // comandos: "pisca pra mim", "muda o fundo", "tira os óculos"...
+  g.addEventListener('tool-call', (e) => {
+    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor };
+    const responses = e.detail.map((fc) => ({
+      id: fc.id,
+      name: fc.name,
+      response: { result: runCommand(fc.name, fc.args || {}, ctx) },
+    }));
+    g.sendToolResponse(responses);
+  });
 }
 
 function endTurn() {

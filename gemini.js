@@ -18,13 +18,14 @@ function fromBase64(b64) {
 }
 
 export class GeminiLive extends EventTarget {
-  constructor({ workerUrl, appToken, voice, systemPrompt, model = GEMINI_MODEL }) {
+  constructor({ workerUrl, appToken, voice, systemPrompt, tools = null, model = GEMINI_MODEL }) {
     super();
     this.workerUrl = workerUrl.replace(/\/+$/, '');
     this.appToken = appToken;
     this.voice = voice;
     this.systemPrompt = systemPrompt;
     this.model = model;
+    this.tools = tools;
     this.handle = null; // para retomar a sessão
     this.closing = false;
     this.ready = false;
@@ -76,6 +77,7 @@ export class GeminiLive extends EventTarget {
           contextWindowCompression: { slidingWindow: {} }, // conversa sem limite de tempo
           sessionResumption: this.handle ? { handle: this.handle } : {},
         };
+        if (this.tools) setup.tools = [{ functionDeclarations: this.tools }];
         ws.send(JSON.stringify({ setup }));
       };
       ws.onmessage = async (ev) => {
@@ -143,6 +145,7 @@ export class GeminiLive extends EventTarget {
       this.usage.total += m.totalTokenCount || 0;
       this._emit('usage', this.usage);
     }
+    if (msg.toolCall?.functionCalls?.length) this._emit('tool-call', msg.toolCall.functionCalls);
     const sc = msg.serverContent;
     if (!sc) return;
     if (sc.interrupted) this._emit('interrupted');
@@ -170,6 +173,10 @@ export class GeminiLive extends EventTarget {
   // imagem da câmera (JPEG em base64, sem o prefixo data:)
   sendImage(b64jpeg) {
     this._send({ realtimeInput: { video: { data: b64jpeg, mimeType: 'image/jpeg' } } });
+  }
+  // responde aos comandos executados, para ela continuar a conversa
+  sendToolResponse(functionResponses) {
+    this._send({ toolResponse: { functionResponses } });
   }
   sendText(text) {
     this._send({ realtimeInput: { text } });

@@ -16,6 +16,7 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 | `emotion.js` | uma IA pequena lê a conversa e decide as reações do rosto | OpenAI (via Worker) |
 | `lipsync.js` | boca guiada pelo som real da voz (não sai de sincronia) | no aparelho |
 | `look.js` | luz de estúdio, enquadramento, óculos, cabelo | no aparelho |
+| `commands.js` | comandos por voz: expressões, gestos, fundo, cabelo, óculos, câmera, humor | no aparelho |
 
 ## Configuração (uma vez)
 
@@ -33,7 +34,7 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 
 ## Personalizar
 
-- Personalidade: `persona.js`
+- Personalidade e modo encontro: `persona.js`
 - Cor do cabelo, luzes e enquadramento: `LOOK` em `look.js`
 - Óculos: `glasses.js`
 

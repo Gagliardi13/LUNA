@@ -46,11 +46,24 @@ export function applyLook(head, look = LOOK) {
     }
   });
 
-  addGlasses(head.armature, { color: 0x050506 });
+  head.glasses = addGlasses(head.armature, { color: 0x050506 });
   frame(head, look);
   // reenquadra quando a tela gira ou a janela muda de tamanho
   let t;
   window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => frame(head, look), 250); });
+}
+
+export function setHair(head, color) {
+  head.armature.traverse((o) => {
+    if (!o.isMesh || !/hair/i.test(o.name)) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) m && m.color && m.color.set(color);
+  });
+}
+
+let zoom = 0; // ajuste pedido por comando: negativo = mais perto
+export function setZoom(head, z, look = LOOK) {
+  zoom = z;
+  frame(head, look);
 }
 
 // celular em pé precisa da câmera mais longe para caber cabeça e ombros
@@ -60,5 +73,5 @@ export function frame(head, look = LOOK) {
   let extra = 0, dy = 0;
   if (aspect < 0.8) { extra = 1.2; dy = 0.22; }
   else if (aspect < 1.2) { extra = 0.6; dy = 0.1; }
-  head.setView(look.view, { cameraDistance: look.cameraDistance + extra, cameraY: look.cameraY + dy });
+  head.setView(look.view, { cameraDistance: Math.max(0.2, look.cameraDistance + extra + zoom), cameraY: look.cameraY + dy - zoom * 0.05 });
 }
