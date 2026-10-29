@@ -1,13 +1,20 @@
-// Captura do microfone: converte para PCM 16 bits a 16 kHz e envia blocos de ~100 ms.
+// Captura do microfone: converte para PCM 16 bits (16 ou 24 kHz) e envia blocos de ~100 ms.
 class MicCapture extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.ratio = sampleRate / 16000;
-    this.pos = 0;
-    this.out = new Int16Array(1600);
+    this.setRate(16000);
     this.n = 0;
     this.enabled = true;
-    this.port.onmessage = (e) => { if (e.data && 'enabled' in e.data) this.enabled = e.data.enabled; };
+    this.port.onmessage = (e) => {
+      if (e.data && 'enabled' in e.data) this.enabled = e.data.enabled;
+      if (e.data && e.data.rate) this.setRate(e.data.rate); // 16 kHz (Gemini) ou 24 kHz (OpenAI)
+    };
+  }
+  setRate(rate) {
+    this.ratio = sampleRate / rate;
+    this.pos = 0;
+    this.out = new Int16Array(Math.round(rate / 10)); // blocos de ~100 ms
+    this.n = 0;
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];

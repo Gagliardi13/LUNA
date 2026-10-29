@@ -20,6 +20,8 @@ function fromBase64(b64) {
 export class GeminiLive extends EventTarget {
   constructor({ workerUrl, appToken, voice, systemPrompt, tools = null, search = true, mediaResolution = 'MEDIA_RESOLUTION_LOW', model = GEMINI_MODEL }) {
     super();
+    this.provider = 'gemini';
+    this.inputRate = 16000; // o Gemini recebe áudio a 16 kHz
     this.workerUrl = workerUrl.replace(/\/+$/, '');
     this.appToken = appToken;
     this.voice = voice;
@@ -51,6 +53,7 @@ export class GeminiLive extends EventTarget {
     const txt = await r.text();
     if (r.status === 401) throw new Error('Senha do app incorreta.');
     if (r.status === 404) throw new Error('O Worker ainda não tem a parte da Luna. Cole o worker.js novo no Cloudflare.');
+    if (r.status === 429) throw new Error('quota: ' + txt.slice(0, 200));
     if (!r.ok) throw new Error(`Servidor respondeu ${r.status}: ${txt.slice(0, 300)}`);
     return JSON.parse(txt);
   }
@@ -116,6 +119,11 @@ export class GeminiLive extends EventTarget {
 
   async _onClose(ev) {
     if (this.closing) { this._emit('closed', { code: ev.code, reason: ev.reason }); return; }
+    // cota esgotada: não adianta tentar de novo (o app troca para a OpenAI)
+    if (/quota|exceeded|RESOURCE_EXHAUSTED|billing/i.test(ev.reason || '')) {
+      this._emit('closed', { code: ev.code, reason: ev.reason, quota: true });
+      return;
+    }
     // fechamento inesperado ou fim de ciclo de 10 min: reconecta retomando a sessão
     if (this.retries >= 4) {
       this._emit('closed', { code: ev.code, reason: ev.reason || 'falhou ao reconectar' });

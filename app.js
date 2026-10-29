@@ -4,6 +4,7 @@ import { TalkingHead } from './lib/talkinghead/talkinghead.mjs';
 import { applyLook } from './look.js';
 import { AudioLipsync } from './lipsync.js';
 import { GeminiLive } from './gemini.js';
+import { OpenAILive, isQuotaError } from './openai.js';
 import { Vision, ScreenShare } from './vision.js';
 import { EmotionEngine } from './emotion.js';
 import { PERSONA, MODOS, SAUDACAO, preencher } from './persona.js';
@@ -85,7 +86,7 @@ function toast(msg, ms = 6000) {
 }
 
 // ---------- estado da conversa ----------
-let gemini = null, vision = null, emotions = null;
+let brain = null, vision = null, emotions = null;
 let micStream = null, micCtx = null, micNode = null;
 let muted = false, camOn = true, subsOn = true, fone = false, visionMode = 'eco';
 let lunaSpeaking = false, userSpeaking = false, discarding = false;
@@ -93,6 +94,8 @@ let newTurn = true;
 let lunaLine = '', userLine = '', sentence = '';
 let lastFrame = 0, sessionStart = 0;
 let mode = 'livre', screen = null;
+let transcript = []; // últimas falas (para continuar a conversa se trocar de Gemini para OpenAI)
+let conf = null;    // endereço, senha e nome desta conversa
 
 // ---------- começar ----------
 $('btnStart').onclick = async () => {
@@ -133,9 +136,9 @@ $('btnStart').onclick = async () => {
     const analyser = micCtx.createAnalyser();
     src.connect(analyser);
     micNode.port.onmessage = (e) => {
-      if (muted || !gemini?.ready) return;
+      if (muted || !brain?.ready) return;
       if (lunaSpeaking && !fone) return; // sem fone: não envia enquanto ela fala (ela não se ouve)
-      gemini.sendAudio(e.data);
+      brain.sendAudio(e.data);
     };
     head.startListening(analyser, { listeningSilenceThresholdMs: 800 }, onListening);
 
@@ -157,19 +160,11 @@ $('btnStart').onclick = async () => {
     $('bCam').classList.toggle('on', camOn);
     $('bCam').classList.toggle('off', !camOn);
 
-    // 4) Gemini
+    // 4) cérebro: Gemini primeiro; se a cota tiver acabado, OpenAI
     setStatus('Conectando com a Luna…');
-    gemini = new GeminiLive({
-      workerUrl: worker,
-      appToken: token,
-      voice: $('fVoice').value,
-      systemPrompt: preencher(PERSONA + '\n\n' + MODOS[mode].texto, name),
-      tools: TOOLS,
-      search: true,
-      mediaResolution: mode === 'professora' ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_LOW',
-    });
-    wireGemini(gemini);
-    await gemini.connect();
+    conf = { worker, token, name };
+    transcript = [];
+    brain = await connectBrain();
 
     emotions = new EmotionEngine({ workerUrl: worker, appToken: token, nome: 'Luna', onReaction: react, onError: () => {} });
 
@@ -179,7 +174,7 @@ $('btnStart').onclick = async () => {
     sessionStart = Date.now();
     navigator.wakeLock?.request('screen').catch(() => {});
     sendFrame(true);
-    setTimeout(() => gemini.sendText(preencher(SAUDACAO, name)), 400);
+    setTimeout(() => brain.sendText(preencher(SAUDACAO, name)), 400);
     setState('', 'Pode falar');
   } catch (e) {
     console.error(e);
@@ -189,8 +184,69 @@ $('btnStart').onclick = async () => {
   }
 };
 
-// ---------- eventos do Gemini ----------
-function wireGemini(g) {
+// ---------- conexão: Gemini com plano B automático na OpenAI ----------
+async function connectBrain(contextNote = '') {
+  const prompt = preencher(PERSONA + '\n\n' + MODOS[mode].texto, conf.name) + contextNote;
+  let b;
+  try {
+    b = new GeminiLive({
+      workerUrl: conf.worker,
+      appToken: conf.token,
+      voice: $('fVoice').value,
+      systemPrompt: prompt,
+      tools: TOOLS,
+      search: true,
+      mediaResolution: mode === 'professora' || screen?.active ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_LOW',
+    });
+    wireBrain(b);
+    await b.connect();
+  } catch (e) {
+    try { b?.close(); } catch {}
+    const motivo = isQuotaError(e.message) ? 'a cota grátis do Gemini acabou por hoje' : 'o Gemini não respondeu';
+    toast(`Como ${motivo}, a Luna está usando a OpenAI agora.`, 7000);
+    setStatus('Conectando pela OpenAI…');
+    b = new OpenAILive({
+      workerUrl: conf.worker,
+      appToken: conf.token,
+      voice: 'marin',
+      systemPrompt: prompt + '\n\n(Nesta conexão a busca na internet não está disponível: se ele pedir algo bem atual, avise com naturalidade que agora não consegue pesquisar.)',
+      tools: TOOLS,
+    });
+    wireBrain(b);
+    try {
+      await b.connect();
+    } catch (e2) {
+      throw new Error(`Gemini: ${e.message} | OpenAI: ${e2.message}`);
+    }
+  }
+  micNode?.port.postMessage({ rate: b.inputRate }); // ajusta a taxa do microfone para quem vai ouvir
+  updateMeter(b.usage);
+  return b;
+}
+
+// no meio da conversa a cota do Gemini acabou: passa para a OpenAI e continua o assunto
+async function switchToBackup() {
+  setState('thinking', 'Trocando para a OpenAI…');
+  head.streamInterrupt();
+  newTurn = true;
+  const hist = transcript.slice(-16).join('\n');
+  const note = `\n\nCONTEXTO: vocês já estavam conversando, mas a conexão anterior caiu e você voltou. Últimas falas:\n${hist}\n` +
+    'Continue de onde pararam, sem cumprimentar de novo.';
+  try {
+    const old = brain;
+    brain = null;
+    try { old?.close(); } catch {}
+    brain = await connectBrain(note);
+    brain.sendText('(Você voltou depois de uma queda rápida de conexão. Diga em poucas palavras que voltou e retome o assunto.)');
+    setState('', 'Pode falar');
+  } catch (e) {
+    setState('off', 'Desconectada');
+    toast('Não consegui reconectar: ' + e.message);
+  }
+}
+
+// ---------- eventos da conversa (iguais para Gemini e OpenAI) ----------
+function wireBrain(g) {
   g.addEventListener('audio', (e) => {
     if (discarding) return;
     const { buffer } = e.detail;
@@ -226,7 +282,12 @@ function wireGemini(g) {
   });
   g.addEventListener('reconnecting', () => setState('thinking', 'Reconectando…'));
   g.addEventListener('ready', (e) => { if (e.detail.resumed) setState('', 'Pode falar'); });
-  g.addEventListener('closed', (e) => { setState('off', 'Desconectada'); toast('A conexão com a Luna caiu (' + (e.detail.reason || e.detail.code) + '). Toque em Encerrar e comece de novo.'); });
+  g.addEventListener('closed', (e) => {
+    if (g !== brain || !sessionStart) return; // conexão antiga ou conversa já encerrada
+    if (g.provider === 'gemini' && (e.detail.quota || isQuotaError(e.detail.reason))) { switchToBackup(); return; }
+    setState('off', 'Desconectada');
+    toast('A conexão com a Luna caiu (' + (e.detail.reason || e.detail.code) + '). Toque em Encerrar e comece de novo.');
+  });
   g.addEventListener('error', (e) => toast(String(e.detail)));
   g.addEventListener('usage', (e) => updateMeter(e.detail));
   // comandos: "pisca pra mim", "muda o fundo", "tira os óculos"...
@@ -242,7 +303,8 @@ function wireGemini(g) {
 }
 
 function endTurn() {
-  if (lunaLine.trim()) emotions?.remember('ela', lunaLine);
+  if (lunaLine.trim()) { emotions?.remember('ela', lunaLine); transcript.push('Luna: ' + lunaLine.trim()); }
+  if (transcript.length > 40) transcript.splice(0, transcript.length - 40);
   if (sentence.trim()) emotions?.analyze('ela', sentence, { urgent: true });
   sentence = '';
   newTurn = true;
@@ -257,7 +319,7 @@ function onListening(ev) {
     sendFrame(true); // talvez você esteja mostrando algo: manda a imagem já
   } else if (ev === 'stop') {
     userSpeaking = false;
-    if (userLine.trim()) emotions?.remember('user', userLine);
+    if (userLine.trim()) { emotions?.remember('user', userLine); transcript.push('Ele: ' + userLine.trim()); }
     if (!lunaSpeaking && !muted) setState('thinking', 'Pensando…');
     setTimeout(() => { if (!lunaSpeaking && !userSpeaking) setState('', muted ? 'Microfone desligado' : 'Pode falar'); }, 6000);
   }
@@ -359,19 +421,25 @@ function onFace(f) {
 
 // ---------- imagens para o Gemini ----------
 function sendFrame(force = false) {
-  if (!gemini?.ready) return;
+  if (!brain?.ready) return;
   const now = performance.now();
   if (!force && now - lastFrame < 500) return;
+  if (brain.provider === 'openai' && now - lastFrame < 4000) return; // OpenAI: no máximo 1 imagem a cada 4 s
   let img = null;
   if (screen?.active) img = screen.snapshot(1280, 0.7); // compartilhando a tela: ela vê a tela
   else if (vision && camOn && visionMode !== 'off') img = vision.snapshot(512, 0.6);
   if (!img) return;
-  gemini.sendImage(img);
+  brain.sendImage(img);
   lastFrame = now;
 }
 setInterval(() => {
   if (!sessionStart) return;
   const since = performance.now() - lastFrame;
+  if (brain?.provider === 'openai') {
+    // na OpenAI cada imagem fica na conversa e custa mais: só a tela, de vez em quando
+    if (screen?.active && since >= 8000) sendFrame();
+    return;
+  }
   if (screen?.active) { if (userSpeaking ? since >= 2000 : since >= 6000) sendFrame(); return; }
   if (visionMode === 'full' && since >= 1000) sendFrame();
   else if (visionMode === 'eco' && (userSpeaking ? since >= 1500 : since >= 8000)) sendFrame();
@@ -412,9 +480,10 @@ function showSubs() {
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function updateMeter(u) {
   const min = Math.max(1, Math.round((Date.now() - sessionStart) / 60000));
-  $('meter').textContent = `${min} min · ${(u.total / 1000).toFixed(1)}k tokens`;
+  const via = brain?.provider === 'openai' ? 'OpenAI' : 'Gemini';
+  $('meter').textContent = `${via} · ${min} min · ${(u.total / 1000).toFixed(1)}k tokens`;
 }
-setInterval(() => { if (sessionStart && gemini) updateMeter(gemini.usage); }, 30000);
+setInterval(() => { if (sessionStart && brain) updateMeter(brain.usage); }, 30000);
 
 function showPip(on) {
   $('pip').style.opacity = on ? '1' : '0';
@@ -453,10 +522,10 @@ $('bScreen').onclick = async () => {
     await screen.start();
     $('bScreen').classList.add('on');
     // para ler texto na tela, as imagens precisam de resolução maior (reconecta sem perder a conversa)
-    if (gemini && gemini.mediaResolution !== 'MEDIA_RESOLUTION_MEDIUM') gemini.reconfigure({ mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' });
+    if (brain && brain.mediaResolution !== 'MEDIA_RESOLUTION_MEDIUM') brain.reconfigure({ mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' });
     setTimeout(() => {
       sendFrame(true);
-      gemini?.sendText('(Ele começou a compartilhar a tela do computador com você. As próximas imagens são da tela dele, não da câmera. Comente brevemente o que vê, se fizer sentido.)');
+      brain?.sendText('(Ele começou a compartilhar a tela do computador com você. As próximas imagens são da tela dele, não da câmera. Comente brevemente o que vê, se fizer sentido.)');
     }, 1500);
   } catch (e) {
     screen = null;
@@ -466,7 +535,7 @@ $('bScreen').onclick = async () => {
 function screenOff() {
   $('bScreen').classList.remove('on');
   screen = null;
-  gemini?.sendText('(Ele parou de compartilhar a tela. As imagens voltam a ser da câmera.)');
+  brain?.sendText('(Ele parou de compartilhar a tela. As imagens voltam a ser da câmera.)');
 }
 
 $('bBg').oninput = (e) => { setBackground(e.target.value); store.set('bg', e.target.value); };
@@ -481,16 +550,16 @@ $('bEnd').onclick = () => {
 };
 
 function cleanup() {
-  try { gemini?.close(); } catch {}
+  try { brain?.close(); } catch {}
   try { head.stopListening(); head.streamStop(); } catch {}
   try { vision?.stop(); screen?.stop(); } catch {}
   screen = null; $('bScreen').classList.remove('on');
   $('cmds').innerHTML = '';
   try { micStream?.getTracks().forEach((t) => t.stop()); micCtx?.close(); } catch {}
-  gemini = null; vision = null; micStream = null; micCtx = null;
+  brain = null; vision = null; micStream = null; micCtx = null;
   sessionStart = 0; lunaSpeaking = false; userSpeaking = false; discarding = false; newTurn = true;
   lunaLine = ''; userLine = ''; showSubs();
 }
 
 // para testes no computador (console)
-window.luna = { head, react, expression, get gemini() { return gemini; } };
+window.luna = { head, react, expression, get brain() { return brain; } };
