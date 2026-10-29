@@ -231,7 +231,7 @@ function wireGemini(g) {
   g.addEventListener('usage', (e) => updateMeter(e.detail));
   // comandos: "pisca pra mim", "muda o fundo", "tira os óculos"...
   g.addEventListener('tool-call', (e) => {
-    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor, onMode: (m) => { mode = m; toast('Modo: ' + MODOS[m].nome, 2500); } };
+    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor, onMode: (m) => { mode = m; toast('Modo: ' + MODOS[m].nome, 2500); }, showCommand };
     const responses = e.detail.map((fc) => ({
       id: fc.id,
       name: fc.name,
@@ -377,6 +377,32 @@ setInterval(() => {
   else if (visionMode === 'eco' && (userSpeaking ? since >= 1500 : since >= 8000)) sendFrame();
 }, 250);
 
+// ---------- comandos para copiar ----------
+function showCommand(code, title) {
+  const box = $('cmds');
+  for (const old of box.querySelectorAll('.cmd')) old.classList.add('old');
+  const card = document.createElement('div');
+  card.className = 'cmd';
+  card.innerHTML = `<div class="head"><span class="t"></span><span><button class="copy">Copiar</button><button class="x" title="Fechar">✕</button></span></div><pre></pre>`;
+  card.querySelector('.t').textContent = title || 'Comando';
+  card.querySelector('pre').textContent = code;
+  card.querySelector('.copy').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      const r = document.createRange(); r.selectNodeContents(card.querySelector('pre'));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); document.execCommand('copy');
+    }
+    btn.textContent = 'Copiado ✓';
+    setTimeout(() => (btn.textContent = 'Copiar'), 1500);
+  };
+  card.querySelector('.x').onclick = () => card.remove();
+  box.appendChild(card);
+  while (box.children.length > 4) box.firstChild.remove(); // mantém só os últimos
+  box.scrollTop = box.scrollHeight;
+}
+
 // ---------- legendas e consumo ----------
 function showSubs() {
   if (!subsOn) { $('subs').innerHTML = ''; return; }
@@ -459,6 +485,7 @@ function cleanup() {
   try { head.stopListening(); head.streamStop(); } catch {}
   try { vision?.stop(); screen?.stop(); } catch {}
   screen = null; $('bScreen').classList.remove('on');
+  $('cmds').innerHTML = '';
   try { micStream?.getTracks().forEach((t) => t.stop()); micCtx?.close(); } catch {}
   gemini = null; vision = null; micStream = null; micCtx = null;
   sessionStart = 0; lunaSpeaking = false; userSpeaking = false; discarding = false; newTurn = true;

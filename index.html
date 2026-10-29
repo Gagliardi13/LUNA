@@ -87,6 +87,17 @@
     .bar label.colorbtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
     #toast { position: absolute; left: 16px; right: 16px; top: 64px; padding: 12px 14px; border-radius: 12px; background: rgba(100, 30, 40, .88);
       font-size: 14px; display: none; pointer-events: auto; }
+    #cmds { position: absolute; left: 12px; right: 120px; bottom: calc(150px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px;
+      max-height: 45vh; overflow-y: auto; pointer-events: auto; }
+    .cmd { background: rgba(14, 14, 20, .88); backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px 10px; animation: in .25s ease-out; }
+    .cmd.old { opacity: .55; }
+    .cmd .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .cmd .t { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cmd pre { margin: 0; font: 13px/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: #e8e4ff; white-space: pre-wrap; word-break: break-all; max-height: 30vh; overflow: auto; }
+    .cmd button { flex: none; padding: 5px 12px; border-radius: 8px; border: 0; font: inherit; font-size: 13px; font-weight: 600; color: #17122b;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); cursor: pointer; }
+    .cmd .x { background: transparent; color: var(--muted); padding: 5px 6px; font-weight: 500; }
+    @keyframes in { from { transform: translateY(8px); opacity: 0; } }
     #tapHint { position: absolute; left: 0; right: 0; top: 46%; text-align: center; font-size: 13px; color: rgba(255,255,255,.55); display: none; }
   </style>
   <script type="importmap">
@@ -176,6 +187,7 @@
     </div>
     <div id="toast"></div>
     <div id="tapHint">toque nela para interromper</div>
+    <div id="cmds"></div>
     <div id="subs"></div>
     <video id="pip" playsinline muted></video>
     <div class="bar">

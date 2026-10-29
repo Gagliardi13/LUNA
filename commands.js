@@ -51,6 +51,18 @@ export const TOOLS = [
     parameters: { type: 'OBJECT', properties: { distancia: { type: 'STRING', enum: ['bem_perto', 'perto', 'normal', 'longe'] } }, required: ['distancia'] },
   },
   {
+    name: 'mostrar_comando',
+    description: 'Mostra na tela dele um comando ou trecho de código pronto para copiar (com botão Copiar). Use SEMPRE que for passar um comando de terminal, um código, um arquivo (ex.: Dockerfile) ou um texto exato que ele precise digitar, em vez de soletrar.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        comando: { type: 'STRING', description: 'o comando ou código exato, pode ter várias linhas' },
+        titulo: { type: 'STRING', description: 'título curto opcional, ex.: "Listar containers"' },
+      },
+      required: ['comando'],
+    },
+  },
+  {
     name: 'mudar_modo',
     description: 'Muda o modo da conversa quando ele pedir: livre (conversa normal), desabafo (ouvinte acolhedora, estilo terapeuta), encontro (flerte e romance) ou professora (ensinar um assunto). Siga as instruções devolvidas.',
     parameters: { type: 'OBJECT', properties: { modo: { type: 'STRING', enum: Object.keys(MODOS) } }, required: ['modo'] },
@@ -105,6 +117,11 @@ export function runCommand(name, args, ctx) {
       case 'enquadramento': {
         setZoom(head, { bem_perto: -0.9, perto: -0.5, normal: 0, longe: 0.9 }[args.distancia] ?? 0);
         return 'feito';
+      }
+      case 'mostrar_comando': {
+        if (!args.comando) return 'comando vazio';
+        ctx.showCommand?.(String(args.comando), args.titulo ? String(args.titulo) : '');
+        return 'comando mostrado na tela dele, com botão Copiar';
       }
       case 'mudar_modo': {
         const m = MODOS[args.modo];
