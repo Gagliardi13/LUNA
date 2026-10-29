@@ -25,7 +25,7 @@ $('fBg').value = store.get('bg', '#000000');
 $('fVision').value = store.get('vision', 'eco');
 $('fFone').checked = store.get('fone', '0') === '1';
 $('fPip').checked = store.get('pip', '1') === '1';
-$('fMode').value = store.get('mode', store.get('date', '0') === '1' ? 'encontro' : 'livre');
+$('fMode').value = store.get('mode', 'auto');
 setBackground($('fBg').value);
 
 function setBackground(c) {
@@ -106,7 +106,7 @@ $('btnStart').onclick = async () => {
   fone = $('fFone').checked;
   visionMode = $('fVision').value;
   for (const [k, v] of [['worker', worker], ['token', token], ['name', name], ['voice', $('fVoice').value], ['bg', $('fBg').value], ['vision', visionMode], ['fone', fone ? '1' : '0'], ['pip', $('fPip').checked ? '1' : '0'], ['mode', $('fMode').value]]) store.set(k, v);
-  mode = $('fMode').value;
+  mode = $('fMode').value === 'auto' ? 'livre' : $('fMode').value; // automático começa na conversa livre
 
   $('btnStart').disabled = true;
   try {
@@ -292,7 +292,7 @@ function wireBrain(g) {
   g.addEventListener('usage', (e) => updateMeter(e.detail));
   // comandos: "pisca pra mim", "muda o fundo", "tira os óculos"...
   g.addEventListener('tool-call', (e) => {
-    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor, onMode: (m) => { mode = m; toast('Modo: ' + MODOS[m].nome, 2500); }, showCommand };
+    const ctx = { head, expression, setBackground: (c) => { setBackground(c); store.set('bg', c); }, setMoodFor, onMode: (m) => { mode = m; updateMeter(brain?.usage || { total: 0 }); }, showCommand };
     const responses = e.detail.map((fc) => ({
       id: fc.id,
       name: fc.name,
@@ -481,7 +481,7 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>'
 function updateMeter(u) {
   const min = Math.max(1, Math.round((Date.now() - sessionStart) / 60000));
   const via = brain?.provider === 'openai' ? 'OpenAI' : 'Gemini';
-  $('meter').textContent = `${via} · ${min} min · ${(u.total / 1000).toFixed(1)}k tokens`;
+  $('meter').textContent = `${MODOS[mode]?.nome || ''} · ${via} · ${min} min · ${(u.total / 1000).toFixed(1)}k tokens`;
 }
 setInterval(() => { if (sessionStart && brain) updateMeter(brain.usage); }, 30000);
 
