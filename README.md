@@ -14,6 +14,8 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 | `gemini.js` | conversa ao vivo com o Gemini 3.8 Live: voz, interrupção e imagens da câmera | Google |
 | `servidor/worker.js` | guarda as chaves e entrega tokens temporários | Cloudflare Worker `sol-voz` |
 | `emotion.js` | uma IA pequena lê a conversa e decide as reações do rosto | OpenAI (via Worker) |
+| `lipsync.js` | boca guiada pelo som real da voz (não sai de sincronia) | no aparelho |
+| `look.js` | luz de estúdio, enquadramento, óculos, cabelo | no aparelho |
 
 ## Configuração (uma vez)
 
@@ -32,7 +34,7 @@ Ela te ouve, te vê pela câmera, responde por voz na hora e te olha nos olhos.
 ## Personalizar
 
 - Personalidade: `persona.js`
-- Cor do cabelo: `HAIR` em `app.js`
+- Cor do cabelo, luzes e enquadramento: `LOOK` em `look.js`
 - Óculos: `glasses.js`
 
 ## Créditos e licenças

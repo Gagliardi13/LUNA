@@ -33,10 +33,11 @@ export function addGlasses(armature, { color = 0x1b1b1f, forward = 0.021, drop =
   const fwd = new THREE.Vector3().crossVectors(xAxis, up).normalize();
   const center = L.clone().add(R).multiplyScalar(0.5);
 
-  const w = ipd * 0.86 * scale, h = w * 0.6, t = w * 0.075, r = h * 0.32;
-  const frameMat = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.2 });
+  const w = ipd * 0.86 * scale, h = w * 0.58, t = w * 0.055, r = h * 0.34;
+  // armação fosca (sem metal: senão o reflexo do ambiente deixa ela prateada)
+  const frameMat = new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, envMapIntensity: 0.05 });
   const lensMat = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.05, metalness: 0, depthWrite: false,
+    color: 0xffffff, transparent: true, opacity: 0.07, roughness: 0.05, metalness: 0, depthWrite: false, envMapIntensity: 0.6,
   });
 
   const g = new THREE.Group();

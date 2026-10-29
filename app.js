@@ -1,14 +1,14 @@
 // Luna: rosto 3D realista + conversa ao vivo com o Gemini (voz e visão) + olhar que te segue.
 import * as THREE from 'three';
 import { TalkingHead } from './lib/talkinghead/talkinghead.mjs';
-import { addGlasses } from './glasses.js';
+import { applyLook } from './look.js';
+import { AudioLipsync } from './lipsync.js';
 import { GeminiLive } from './gemini.js';
 import { Vision } from './vision.js';
 import { EmotionEngine } from './emotion.js';
 import { PERSONA, SAUDACAO, preencher } from './persona.js';
 
 const $ = (id) => document.getElementById(id);
-const HAIR = '#463026'; // castanho-escuro
 
 // ---------- configurações salvas no aparelho ----------
 const store = {
@@ -32,6 +32,8 @@ function setBackground(c) {
 }
 
 // ---------- rosto 3D ----------
+let lipsync = null;
+let tick = () => {};
 const head = new TalkingHead($('avatar'), {
   ttsEndpoint: 'none',
   lipsyncModules: ['pt_br'],
@@ -41,11 +43,9 @@ const head = new TalkingHead($('avatar'), {
   modelFPS: 30,
   avatarIdleEyeContact: 0.6,
   avatarSpeakingEyeContact: 0.75,
-  lightAmbientIntensity: 1.6,
-  lightDirectColor: 0xfff1e0,
-  lightDirectIntensity: 22,
-  lightDirectPhi: 0.6,
-  lightDirectTheta: 2.2,
+  avatarIdleHeadMove: 0.6,
+  avatarSpeakingHeadMove: 0.75,
+  update: (dt) => { lipsync?.update(dt, head.isSpeaking); tick(dt); },
 });
 
 // "você", do ponto de vista dela: um ponto em frente à tela que acompanha seu rosto na câmera
@@ -56,12 +56,7 @@ head.showAvatar(
   { url: './avatars/luna.glb', body: 'F', avatarMood: 'neutral', lipsyncLang: 'pt_br' },
   (e) => { if (e.lengthComputable) $('bar').style.width = Math.round((e.loaded / e.total) * 100) + '%'; }
 ).then(() => {
-  addGlasses(head.armature);
-  head.armature.traverse((o) => {
-    if (o.isMesh && /hair/i.test(o.name)) {
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.color && m.color.set(HAIR);
-    }
-  });
+  applyLook(head); // luz de estúdio, óculos, cabelo e enquadramento
   head.scene.add(you);
   you.position.copy(head.camera.position);
   head.speakTo = you;
@@ -92,7 +87,7 @@ let gemini = null, vision = null, emotions = null;
 let micStream = null, micCtx = null, micNode = null;
 let muted = false, camOn = true, subsOn = true, fone = false, visionMode = 'eco';
 let lunaSpeaking = false, userSpeaking = false, discarding = false;
-let turnAudioMs = 0, wordCursor = 0, newTurn = true;
+let newTurn = true;
 let lunaLine = '', userLine = '', sentence = '';
 let lastFrame = 0, sessionStart = 0;
 
@@ -110,10 +105,13 @@ $('btnStart').onclick = async () => {
   try {
     // 1) áudio de saída (precisa ser iniciado por um toque, regra dos navegadores)
     await head.streamStart(
-      { sampleRate: 24000, lipsyncType: 'words', lipsyncLang: 'pt_br', waitForAudioChunks: true },
+      { sampleRate: 24000, lipsyncType: 'visemes', lipsyncLang: 'pt_br', waitForAudioChunks: true },
       () => { lunaSpeaking = true; setState('speaking', 'Luna falando'); $('tapHint').style.display = fone ? 'none' : 'block'; },
       () => { lunaSpeaking = false; $('tapHint').style.display = 'none'; setState('', muted ? 'Microfone desligado' : 'Pode falar'); }
     );
+
+    lipsync = new AudioLipsync(head);
+    lipsync.attach(); // a boca passa a seguir o som real da voz
 
     // 2) microfone
     setStatus('Pedindo acesso ao microfone…');
@@ -188,15 +186,14 @@ $('btnStart').onclick = async () => {
 function wireGemini(g) {
   g.addEventListener('audio', (e) => {
     if (discarding) return;
-    const { buffer, rate } = e.detail;
-    if (newTurn) { newTurn = false; turnAudioMs = 0; wordCursor = 0; lunaLine = ''; }
+    const { buffer } = e.detail;
+    if (newTurn) { newTurn = false; lunaLine = ''; }
+    if (!lipsync?.analyser) lipsync?.attach();
     head.streamAudio({ audio: buffer });
-    turnAudioMs += (buffer.byteLength / 2 / rate) * 1000;
   });
   g.addEventListener('model-text', (e) => {
     if (discarding) return;
-    if (newTurn) { newTurn = false; turnAudioMs = 0; wordCursor = 0; lunaLine = ''; }
-    scheduleWords(e.detail);
+    if (newTurn) { newTurn = false; lunaLine = ''; }
     lunaLine += e.detail;
     sentence += e.detail;
     if (/[.!?…]\s*$/.test(sentence) || sentence.length > 110) {
@@ -234,27 +231,6 @@ function endTurn() {
   newTurn = true;
 }
 
-// A transcrição chega junto com o áudio, mas sem tempo exato de cada palavra:
-// espalhamos as palavras pelo trecho de áudio já recebido (o suficiente para a boca acompanhar).
-function scheduleWords(text) {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length) return;
-  const start = wordCursor;
-  const end = Math.max(turnAudioMs, start + words.length * 260);
-  const weights = words.map((w) => Math.max(2, w.length));
-  const total = weights.reduce((a, b) => a + b, 0);
-  const wtimes = [], wdurations = [];
-  let t = start;
-  for (const w of weights) {
-    const d = ((end - start) * w) / total;
-    wtimes.push(t);
-    wdurations.push(d);
-    t += d;
-  }
-  wordCursor = end;
-  head.streamAudio({ words, wtimes, wdurations });
-}
-
 // você começou / parou de falar (detecção local, no aparelho)
 function onListening(ev) {
   if (ev === 'start') {
@@ -269,6 +245,19 @@ function onListening(ev) {
     setTimeout(() => { if (!lunaSpeaking && !userSpeaking) setState('', muted ? 'Microfone desligado' : 'Pode falar'); }, 6000);
   }
 }
+
+// enquanto você fala: ela escuta "de verdade" (acenos leves, sobrancelha, olhar atento)
+let nextListenCue = 0;
+tick = () => {
+  if (!userSpeaking || lunaSpeaking || !avatarReady) return;
+  const now = performance.now();
+  if (now < nextListenCue) return;
+  nextListenCue = now + 2200 + Math.random() * 3000;
+  const r = Math.random();
+  if (r < 0.5) head.animQueue.push(head.animFactory({ name: 'escuta', dt: [220, 260, 320], vs: { headMove: [0], headRotateX: [0.07, -0.015, 0] } }));
+  else if (r < 0.75) head.animQueue.push(head.animFactory({ name: 'escuta', dt: [300, 900, 400], vs: { browInnerUp: [0.35, 0.35, 0], mouthSmile: [0.15, 0.15, 0] } }));
+  else head.animQueue.push(head.animFactory({ name: 'escuta', dt: [400, 1200, 500], vs: { headRotateZ: [0.05, 0.05, 0] } }));
+};
 
 // tocar nela interrompe (útil sem fone)
 $('avatar').addEventListener('pointerdown', () => {
