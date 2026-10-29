@@ -1,0 +1,2 @@
+166b443a445eeb63a4ea02270aa9e7d6ba8b4d88
+TalkingHead 1.8.2 (github.com/met4citizen/TalkingHead), MIT
